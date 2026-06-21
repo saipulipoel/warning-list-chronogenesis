@@ -1,0 +1,20 @@
+/* Custom clean scrollbars for panel arrays */
+#warning-container::-webkit-scrollbar,
+#gray-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+#warning-container::-webkit-scrollbar-track,
+#gray-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#warning-container::-webkit-scrollbar-thumb {
+    background: #fca5a5;
+    border-radius: 3px;
+}
+
+#gray-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
