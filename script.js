@@ -8,9 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const warningBadge = document.getElementById('warning-badge');
     const grayBadge = document.getElementById('gray-badge');
 
-    // Global Base Configurations
-    const BASE_DAILY_INCREMENT = 300000; 
-    const GRAY_BUFFER_MAX = 1000000;     // 1,000,000 allowance zone
+    // FIXED: Updated daily increment threshold to 3,000,000
+    const BASE_DAILY_INCREMENT = 3000000; 
+    const GRAY_BUFFER_MAX = 1000000;
 
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -30,7 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function processMetrics(data) {
         if (data.length < 2) return;
 
-        // Extract header indexes dynamically to match arbitrary day count sizes
         const headers = data[0].map(h => h.trim());
         const rows = data.slice(1);
 
@@ -42,63 +41,68 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const trainerId = row[0]?.trim();
             const trainerName = row[1]?.trim();
+            if (!trainerId || !trainerName) return;
             
-            // 1. Trace the explicit onboarding day index for the individual trainer
+            // Find when the trainer actually joined by scanning columns
             let firstActiveDay = null;
             let firstActiveDayIdx = -1;
 
             for (let idx = 2; idx < row.length; idx++) {
                 if (row[idx] !== undefined && row[idx].trim() !== '') {
                     firstActiveDayIdx = idx;
-                    // Extract the number from string header (e.g., "Day 3" -> 3)
                     firstActiveDay = parseInt(headers[idx].replace(/\D/g, ''), 10);
                     break;
                 }
             }
 
-            // If user has zero records across all cells, skip
+            // Skip if they have completely empty rows
             if (firstActiveDay === null) return;
 
             const warningsForUser = [];
             const graysForUser = [];
 
-            // 2. Scan every cell column inside row
-            for (let idx = firstActiveDayIdx; idx < row.length; idx++) {
+            // Loop through all headers dynamically (supports up to Day 31 and beyond)
+            for (let idx = 2; idx < headers.length; idx++) {
                 const dayNum = parseInt(headers[idx].replace(/\D/g, ''), 10);
                 
-                // Rule 1: Evaluate metric milestones only on standard even days
+                // Rule 1: We only audit on Even Days
                 if (dayNum % 2 !== 0) continue;
+
+                // Rule 8: If the data array doesn't have this column yet, skip it safely
+                if (idx >= row.length) break;
 
                 const rawValStr = row[idx]?.trim();
                 
-                // Rule 8: If cell data runs empty downstream, they dropped off; break loop
-                if (rawValStr === '') break;
+                // Rule 8: If they were stripped/dropped off next day, ignore subsequent spaces
+                if (rawValStr === '' && dayNum > firstActiveDay) break;
+                if (rawValStr === '') continue;
 
                 const score = parseInt(rawValStr, 10);
                 if (isNaN(score)) continue;
 
-                // 3. Compute Dynamic Threshold based on historical rules
-                let targetThreshold = dayNum * BASE_DAILY_INCREMENT; // Standard Default (Day * 300,000)
+                // Calculate the Threshold base rule (Day * 3,000,000)
+                let targetThreshold = dayNum * BASE_DAILY_INCREMENT;
 
-                // Rule 6: Handle specific exception list adjustments
+                // Rule 6: Handle specific name exceptions
                 if (trainerName.includes('Muu') || trainerName.includes('Rae')) {
                     if (dayNum === 2) targetThreshold = 3000000;
                 } else if (trainerName.includes('AldyWS') || trainerName.includes('MzFaza')) {
                     if (dayNum === 4) targetThreshold = 3000000;
                 } 
-                // Rule 7: Mid-cycle join offsets (Onboarded on late odd days)
+                // Rule 7: Mid-cycle joins on an ODD day changes baseline equation
                 else if (firstActiveDay > 1 && firstActiveDay % 2 !== 0) {
-                    // Allowed cycle length = Current relative timeframe minus entry buffer index
-                    const trackingSpanDays = (dayNum - firstActiveDay) + 1;
-                    targetThreshold = trackingSpanDays * BASE_DAILY_INCREMENT;
+                    if (dayNum >= firstActiveDay) {
+                        const activeSpan = (dayNum - firstActiveDay) + 1;
+                        targetThreshold = activeSpan * BASE_DAILY_INCREMENT;
+                    }
                 }
 
-                // 4. Run classification engine
+                // Check violations
                 if (score < targetThreshold) {
-                    const deviationAmt = targetThreshold - score;
+                    const deficit = targetThreshold - score;
                     
-                    // Rule 4: Assess if missing window falls within Gray List buffer allowance
-                    if (deviationAmt <= GRAY_BUFFER_MAX) {
+                    // Rule 4: If inside the 1,000,000 buffer window, it goes to Gray List
+                    if (deficit <= GRAY_BUFFER_MAX) {
                         graysForUser.push(`Day ${dayNum}`);
                     } else {
                         warningsForUser.push(`Day ${dayNum}`);
@@ -106,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Push processed results if flags exist
+            // Add to lists if triggers occurred
             if (warningsForUser.length > 0) {
                 warningList.push({ name: trainerName, id: trainerId, triggers: warningsForUser });
             }
@@ -119,15 +123,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderDashboard(warnings, grays) {
-        // Clear previous runs
         warningContainer.innerHTML = '';
         grayContainer.innerHTML = '';
 
-        // Update Counter Badges
         warningBadge.textContent = `${warnings.length} Users`;
         grayBadge.textContent = `${grays.length} Users`;
 
-        // Render Warnings
         if (warnings.length === 0) {
             warningContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">No structural warning logs raised.</p>`;
         } else {
@@ -136,7 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Render Grays
         if (grays.length === 0) {
             grayContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">No active buffer tolerances monitored.</p>`;
         } else {
@@ -145,7 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Reveal complete view
         statusBar.textContent = "Data processing complete.";
         dashboardLists.classList.remove('hidden');
     }
@@ -154,26 +153,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const div = document.createElement('div');
         div.className = 'py-3.5 px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2';
         
-        // Group and count occurrences of logged days (Rule 5)
-        const dayCounts = {};
-        user.triggers.forEach(day => {
-            dayCounts[day] = (dayCounts[day] || 0) + 1;
-        });
+        // Count total violations for the individual to display as a counter total
+        const totalViolationsCount = user.triggers.length;
 
-        // Build HTML indicator tags
-        const tagsHTML = Object.entries(dayCounts).map(([day, count]) => {
-            const countBadge = count > 1 ? `<span class="ml-1 bg-white/40 px-1 rounded text-[10px]">${count}x</span>` : '';
+        // Map and render the bad days cleanly
+        const tagsHTML = user.triggers.map(day => {
             return `<span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded ${
                 color === 'rose' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-700'
-            }">${day}${countBadge}</span>`;
+            }">${day}</span>`;
         }).join(' ');
 
         div.innerHTML = `
             <div>
-                <h4 class="font-bold text-sm text-slate-800">${escapeHtml(user.name)}</h4>
+                <div class="flex items-center gap-2">
+                    <h4 class="font-bold text-sm text-slate-800">${escapeHtml(user.name)}</h4>
+                    <span class="text-xs px-1.5 py-0.2 rounded-full font-bold ${
+                        color === 'rose' ? 'bg-rose-600 text-white' : 'bg-slate-500 text-white'
+                    }">
+                        ${totalViolationsCount}x
+                    </span>
+                </div>
                 <p class="text-xs text-slate-400 font-mono mt-0.5">UID: ${user.id}</p>
             </div>
-            <div class="flex flex-wrap gap-1.5 items-center">
+            <div class="flex flex-wrap gap-1.5 items-center max-w-xs justify-end">
                 ${tagsHTML}
             </div>
         `;
