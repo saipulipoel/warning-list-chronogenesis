@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ENGINE BARU: Membuat tabel audit murni bergaya Spreadsheet (Google Sheets) & mengonversinya menjadi gambar
     downloadBtn.addEventListener('click', () => {
         statusBar.textContent = "Generating high-fidelity spreadsheet image...";
 
@@ -49,35 +50,34 @@ document.addEventListener('DOMContentLoaded', () => {
         // 2. Judul Laporan di atas Spreadsheet
         let tableHeaderHTML = `
             <div style="margin-bottom: 20px; font-family: Arial, sans-serif;">
-                <h2 style="margin: 0; font-size: 20px; color: #1f2937; font-weight: bold;">Trainer Metrics Audit Report</h2>
+                <h2 style="margin: 0; font-size: 20px; color: #1f2937; font-weight: bold;">Eclairs Origin Warn List</h2>
                 <p style="margin: 4px 0 0 0; font-size: 12px; color: #6b7280; font-family: monospace;">Exported on: ${new Date().toLocaleString()}</p>
             </div>
         `;
 
         // 3. Gabungkan seluruh data menjadi satu daftar baris urut
-        // Kita petakan jenis list-nya (Warning atau Gray) agar bisa diberi warna baris spreadsheet yang sesuai
         const spreadsheetRows = [];
         
         globalWarningList.forEach(user => {
             spreadsheetRows.push({
                 ...user,
-                type: 'Warning',
+                type: 'Warn',
                 grayCount: globalUserGrayCounts[user.id] || 0
             });
         });
 
         globalGrayList.forEach(user => {
-            // Cegah duplikasi jika user masuk di kedua list (prioritaskan Warning di atas)
             if (!globalWarningList.some(w => w.id === user.id)) {
                 spreadsheetRows.push({
                     ...user,
                     type: 'Gray',
-                    grayCount: 0
+                    grayCount: 0,
+                    grayDays: user.triggers // Untuk baris Gray murni, pemicunya adalah hari Gray-nya
                 });
             }
         });
 
-        // 4. Bangun struktur tabel murni Google Sheets lengkap dengan Gridlines baku (#e5e7eb)
+        // 4. Bangun struktur tabel murni Google Sheets lengkap dengan Gridlines baku (#cbd5e1)
         let spreadsheetTableHTML = `
             <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; table-layout: fixed; font-size: 13px; color: #374151;">
                 <thead>
@@ -85,9 +85,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th style="width: 5%; border: 1px solid #cbd5e1; padding: 10px 8px; font-weight: bold; text-align: center; color: #475569;">#</th>
                         <th style="width: 25%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">Trainer Name</th>
                         <th style="width: 18%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">UID</th>
-                        <th style="width: 14%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; text-align: center; color: #475569;">Status</th>
+                        <th style="width: 12%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; text-align: center; color: #475569;">Status</th>
                         <th style="width: 10%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; text-align: center; color: #475569;">Count</th>
-                        <th style="width: 28%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">Triggered Days</th>
+                        <th style="width: 30%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">Triggered Days</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -98,52 +98,54 @@ document.addEventListener('DOMContentLoaded', () => {
                             </td>
                         </tr>
                     ` : spreadsheetRows.map((user, index) => {
-                        // Tentukan style warna baris & badge status berdasarkan tipe list
-                        const isWarning = user.type === 'Warning';
-                        const rowBgColor = index % 2 === 0 ? '#ffffff' : '#f9fafb'; // Efek zebra striping spreadsheet
-                        const statusBg = isWarning ? '#fee2e2' : '#f1f5f9';
-                        const statusTextColor = isWarning ? '#991b1b' : '#334155';
-                        const badgeBgColor = isWarning ? '#dc2626' : '#64748b';
+                        const isWarning = user.type === 'Warn';
+                        const rowBgColor = index % 2 === 0 ? '#ffffff' : '#f9fafb'; 
+                        
+                        const primaryColor = isWarning ? '#dc2626' : '#4b5563'; 
+                        const textTextColor = isWarning ? '#b91c1c' : '#4b5563';
 
-                        // Kalkulasi teks bonus (+1)
-                        let bonusBadgeHTML = '';
+                        // Format Teks Indikator Bonus (+1) beserta infomasi harinya
+                        let bonusTextHTML = '';
+                        let grayDaysInfoHTML = '';
+                        
                         if (isWarning && user.grayCount >= 3) {
                             const bonusAmount = Math.floor(user.grayCount / 3);
-                            bonusBadgeHTML = `
-                                <table style="display: inline-table; width: 24px; height: 16px; border-collapse: collapse; background-color: #f59e0b; border-radius: 8px; margin-left: 4px; vertical-align: middle;">
-                                    <tr><td style="padding: 0; text-align: center; vertical-align: middle; font-size: 9px; font-weight: bold; color: #ffffff;">+${bonusAmount}</td></tr>
-                                </table>
-                            `;
+                            bonusTextHTML = ` <span style="color: #d97706; font-weight: bold; font-size: 11px;">(+${bonusAmount})</span>`;
+                            
+                            // Ambil list hari gray khusus untuk user warn tersebut jika ada
+                            if (user.grayDays && user.grayDays.length > 0) {
+                                grayDaysInfoHTML = ` <span style="color: #4b5563; font-weight: 600; font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">(${user.grayDays.join(', ')})</span>`;
+                            }
                         }
 
-                        // Bangun tags hari ke dalam cell
-                        const tagBgColor = isWarning ? '#ffe4e6' : '#e2e8f0';
-                        const tagTextColor = isWarning ? '#b91c1c' : '#334155';
-                        const tagsHTML = user.triggers.length === 0 ? '<span style="color:#9ca3af; font-style:italic; font-size:11px;">None</span>' : user.triggers.map(day => {
-                            return `
-                                <table style="display: inline-table; border-collapse: collapse; background-color: ${tagBgColor}; border-radius: 4px; margin-right: 4px; margin-top: 2px; margin-bottom: 2px; vertical-align: middle;">
-                                    <tr><td style="padding: 2px 6px; text-align: center; vertical-align: middle; font-size: 11px; font-weight: 600; color: ${tagTextColor}; white-space: nowrap;">${day}</td></tr>
-                                </table>
-                            `;
-                        }).join('');
+                        // Gabungkan pemicu utama dengan keterangan pemicu gray tambahan di kolom Triggered Days
+                        let tagsHTML = '';
+                        if (user.triggers.length === 0) {
+                            tagsHTML = user.grayDays && user.grayDays.length > 0
+                                ? `<span style="font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">${grayDaysInfoHTML.trim()}</span>`
+                                : '<span style="color:#9ca3af; font-style:italic; font-size:11px;">None</span>';
+                        } else {
+                            tagsHTML = `<span style="color: ${textTextColor}; font-weight: 600; font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">${user.triggers.join(', ')}</span>${grayDaysInfoHTML}`;
+                        }
 
                         return `
                             <tr style="background-color: ${rowBgColor};">
                                 <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; color: #6b7280; font-family: monospace;">${index + 1}</td>
+                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px 12px; font-weight: bold; color: #111827;">${escapeHtml(user.name)}</td>
+                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px 12px; font-family: monospace; color: #4b5563;">${user.id}</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center;">
-                                    <span style="background-color: ${statusBg}; color: ${statusTextColor}; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 4px; display: inline-block;">
-                                        ${user.type.toUpperCase()}
-                                    </span>
+                                
+                                <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-weight: bold; color: ${primaryColor}; font-size: 12px; letter-spacing: 0.5px;">
+                                    ${user.type.toUpperCase()}
                                 </td>
-                                <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; white-space: nowrap;">
-                                    <table style="display: inline-table; width: 26px; height: 16px; border-collapse: collapse; background-color: ${badgeBgColor}; border-radius: 8px; vertical-align: middle;">
-                                        <tr><td style="padding: 0; text-align: center; vertical-align: middle; font-size: 10px; font-weight: bold; color: #ffffff;">${user.triggers.length}x</td></tr>
-                                    </table>${bonusBadgeHTML}
+                                
+                                <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-weight: bold; color: ${primaryColor}; font-family: monospace; font-size: 13px;">
+                                    ${user.triggers.length}x${bonusTextHTML}
                                 </td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 12px; white-space: normal;">
-                                    <div style="display: block; width: 100%; text-align: left;">${tagsHTML}</div>
+                                
+                                <td style="border: 1px solid #cbd5e1; padding: 8px 12px; white-space: normal; word-break: break-word;">
+                                    ${tagsHTML}
                                 </td>
                             </tr>
                         `;
@@ -155,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bufferContainer.innerHTML = tableHeaderHTML + spreadsheetTableHTML;
         document.body.appendChild(bufferContainer);
 
-        // 5. Potret tabel beraliran spreadsheet murni tersebut & buang gangguan warna oklch eksternal
+        // 5. Potret tabel murni bebas layout eksternal
         html2canvas(bufferContainer, {
             scale: 2, 
             useCORS: true, 
@@ -253,15 +255,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
             globalUserGrayCounts[trainerId] = graysForUser.length;
 
+            // Perubahan Penyimpanan Objek: menyertakan referensi list array `grayDays` pada baris Warn
             if (warningsForUser.length > 0) {
-                globalWarningList.push({ name: trainerName, id: trainerId, triggers: warningsForUser });
+                globalWarningList.push({ 
+                    name: trainerName, 
+                    id: trainerId, 
+                    triggers: warningsForUser,
+                    grayDays: graysForUser 
+                });
             }
             if (graysForUser.length > 0) {
-                globalGrayList.push({ name: trainerName, id: trainerId, triggers: graysForUser });
+                globalGrayList.push({ 
+                    name: trainerName, 
+                    id: trainerId, 
+                    triggers: graysForUser 
+                });
             }
             
             if (warningsForUser.length === 0 && graysForUser.length >= 3) {
-                globalWarningList.push({ name: trainerName, id: trainerId, triggers: [] });
+                globalWarningList.push({ 
+                    name: trainerName, 
+                    id: trainerId, 
+                    triggers: [],
+                    grayDays: graysForUser 
+                });
             }
         });
 
@@ -276,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         grayBadge.textContent = `${grays.length} Users`;
 
         if (warnings.length === 0) {
-            warningContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">No structural warning logs raised.</p>`;
+            warningContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">Belum ada Daftar Warn.</p>`;
         } else {
             warnings.forEach(user => {
                 const grayCount = userGrayCounts[user.id] || 0;
@@ -285,7 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (grays.length === 0) {
-            grayContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">No active buffer tolerances monitored.</p>`;
+            grayContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">Belum Ada Daftar Gray.</p>`;
         } else {
             grays.forEach(user => {
                 grayContainer.appendChild(createRowElement(user, 'slate', 0));
