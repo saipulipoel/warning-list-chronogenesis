@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }).then(canvas => {
             const imageURL = canvas.toDataURL('image/png');
             const link = document.createElement('a');
-            link.download = `Trainer_Spreadsheet_Audit_${new Date().toISOString().split('T')[0]}.png`;
+            link.download = `Eclairs_Origin_Warnlist_${new Date().toISOString().split('T')[0]}.png`;
             link.href = imageURL;
             link.click();
             
