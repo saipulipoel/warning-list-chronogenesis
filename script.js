@@ -236,6 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const personalElapsedDays = (dayNum - entryDayNum) + 1;
                 let targetThreshold = personalElapsedDays * BASE_DAILY_INCREMENT;
 
+                if (dayNum === entryDayNum) {
+                    targetThreshold = 3000000;
+                }
+
                 if (score < targetThreshold) {
                     const deficit = targetThreshold - score;
                     
