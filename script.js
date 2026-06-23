@@ -236,12 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const personalElapsedDays = (dayNum - entryDayNum) + 1;
                 let targetThreshold = personalElapsedDays * BASE_DAILY_INCREMENT;
 
-                if (trainerName.includes('Muu') || trainerName.includes('Rae')) {
-                    if (dayNum === 2) targetThreshold = 3000000;
-                } else if (trainerName.includes('AldyWS') || trainerName.includes('MzFaza')) {
-                    if (dayNum === 4) targetThreshold = 3000000;
-                }
-
                 if (score < targetThreshold) {
                     const deficit = targetThreshold - score;
                     
