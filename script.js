@@ -85,8 +85,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th style="width: 5%; border: 1px solid #cbd5e1; padding: 10px 8px; font-weight: bold; text-align: center; color: #475569;">#</th>
                         <th style="width: 25%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">Trainer Name</th>
                         <th style="width: 18%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">UID</th>
-                        <th style="width: 12%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; text-align: center; color: #475569;">Status</th>
-                        <th style="width: 10%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; text-align: center; color: #475569;">Count</th>
+                        <th style="width: 12%; border: 1px solid #cbd5e1; padding: 10px 8px; font-weight: bold; text-align: center; color: #475569;">Status</th>
+                        <th style="width: 10%; border: 1px solid #cbd5e1; padding: 10px 8px; font-weight: bold; text-align: center; color: #475569;">Count</th>
                         <th style="width: 30%; border: 1px solid #cbd5e1; padding: 10px 12px; font-weight: bold; color: #475569;">Triggered Days</th>
                     </tr>
                 </thead>
@@ -111,11 +111,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (isWarning && user.grayCount >= 3) {
                             const bonusAmount = Math.floor(user.grayCount / 3);
                             bonusTextHTML = ` <span style="color: #d97706; font-weight: bold; font-size: 11px;">(+${bonusAmount})</span>`;
-                            
-                            // Ambil list hari gray khusus untuk user warn tersebut jika ada
-                            if (user.grayDays && user.grayDays.length > 0) {
-                                grayDaysInfoHTML = ` <span style="color: #4b5563; font-weight: 600; font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">(${user.grayDays.join(', ')})</span>`;
+                        }
+
+                         // Ambil list hari gray khusus untuk user warn tersebut jika ada
+                        if (user.grayDays && user.grayDays.length > 0) {
+                            const grayAmount = user.grayCount;
+                            if(isWarning){
+                                bonusTextHTML += ` <span style="color: #4b5563; font-weight: bold; font-size: 11px;">(x${grayAmount})</span>`;
                             }
+                            grayDaysInfoHTML = ` <span style="color: #4b5563; font-weight: 600; font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">(${user.grayDays.join(', ')})</span>`;
                         }
 
                         // Gabungkan pemicu utama dengan keterangan pemicu gray tambahan di kolom Triggered Days
@@ -131,19 +135,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         return `
                             <tr style="background-color: ${rowBgColor};">
                                 <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; color: #6b7280; font-family: monospace;">${index + 1}</td>
-                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px 12px; font-weight: bold; color: #111827;">${escapeHtml(user.name)}</td>
-                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px 12px; font-family: monospace; color: #4b5563;">${user.id}</td>
-                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-weight: bold; color: ${primaryColor}; font-size: 12px; letter-spacing: 0.5px;">
                                     ${user.type.toUpperCase()}
                                 </td>
-                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-weight: bold; color: ${primaryColor}; font-family: monospace; font-size: 13px;">
                                     ${user.triggers.length}x${bonusTextHTML}
                                 </td>
-                                
                                 <td style="border: 1px solid #cbd5e1; padding: 8px 12px; white-space: normal; word-break: break-word;">
                                     ${tagsHTML}
                                 </td>
@@ -199,7 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         rows.forEach(row => {
             if (row.length < 2) return;
-            
             const trainerId = row[0]?.trim();
             const trainerName = row[1]?.trim();
             if (!trainerId || !trainerName) return;
@@ -253,20 +251,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             globalUserGrayCounts[trainerId] = graysForUser.length;
 
-            // Perubahan Penyimpanan Objek: menyertakan referensi list array `grayDays` pada baris Warn
+            // --- HITUNG WEIGHT SCORE DI SINI ---
+            const warnCount = warningsForUser.length;
+            const grayCount = graysForUser.length;
+            const calculatedWeight = ((warnCount * 3) * 1.1) + (grayCount * 1);
+
             if (warningsForUser.length > 0) {
                 globalWarningList.push({ 
                     name: trainerName, 
                     id: trainerId, 
                     triggers: warningsForUser,
-                    grayDays: graysForUser 
+                    grayDays: graysForUser,
+                    weightScore: calculatedWeight 
                 });
             }
             if (graysForUser.length > 0) {
                 globalGrayList.push({ 
                     name: trainerName, 
                     id: trainerId, 
-                    triggers: graysForUser 
+                    triggers: graysForUser,
+                    weightScore: calculatedWeight 
                 });
             }
             
@@ -275,11 +279,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     name: trainerName, 
                     id: trainerId, 
                     triggers: [],
-                    grayDays: graysForUser 
+                    grayDays: graysForUser,
+                    weightScore: calculatedWeight 
                 });
             }
         });
 
+        globalWarningList.sort((a, b) => b.weightScore - a.weightScore);
+        globalGrayList.sort((a, b) => b.weightScore - a.weightScore);
         renderDashboard(globalWarningList, globalGrayList, globalUserGrayCounts);
     }
 
@@ -321,7 +328,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const badgeBg = color === 'rose' ? 'bg-rose-600' : 'bg-slate-500';
         
         let bonusBadge = '';
+            console.log(user)
         if (color === 'rose' && grayCount >= 3) {
+            console.log("MEMEK")
             const bonusAmount = Math.floor(grayCount / 3);
             bonusBadge = `<span class="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold ml-1 flex items-center justify-center h-4.5 min-w-6 text-center select-none">+${bonusAmount}</span>`;
         }
