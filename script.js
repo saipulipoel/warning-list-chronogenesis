@@ -118,8 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             const grayAmount = user.grayCount;
                             if(isWarning){
                                 bonusTextHTML += ` <span style="color: #4b5563; font-weight: bold; font-size: 11px;">(x${grayAmount})</span>`;
+                                grayDaysInfoHTML = ` <span style="color: #4b5563; font-weight: 600; font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">(${user.grayDays.join(', ')})</span>`;
                             }
-                            grayDaysInfoHTML = ` <span style="color: #4b5563; font-weight: 600; font-family: monospace; font-size: 12px; letter-spacing: 0.5px;">(${user.grayDays.join(', ')})</span>`;
                         }
 
                         // Gabungkan pemicu utama dengan keterangan pemicu gray tambahan di kolom Triggered Days
