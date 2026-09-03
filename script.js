@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('csv-file');
     const baseIncrementInput = document.getElementById('base-increment');
+    const evalIntervalSelect = document.getElementById('eval-interval');
     const statusBar = document.getElementById('status-bar');
     const dashboardLists = document.getElementById('dashboard-lists');
     const downloadBtn = document.getElementById('download-capture');
@@ -9,13 +10,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const grayContainer = document.getElementById('gray-container');
     const topTotalContainer = document.getElementById('top-total-container');
     const topDailyContainer = document.getElementById('top-daily-container');
+    
+    // Containers Baru
+    const leastTotalContainer = document.getElementById('least-total-container');
+    const leastDailyContainer = document.getElementById('least-daily-container');
 
     const warningBadge = document.getElementById('warning-badge');
     const grayBadge = document.getElementById('gray-badge');
 
     const GRAY_BUFFER_MAX = 1000000;
 
-    // Cache internal data untuk diproses oleh engine pembuat gambar tabel
     let globalRawCsvData = null;
     let globalWarningList = [];
     let globalGrayList = [];
@@ -45,11 +49,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ENGINE BARU: Membuat tabel audit murni bergaya Spreadsheet (Google Sheets) & mengonversinya menjadi gambar
+    if (evalIntervalSelect) {
+        evalIntervalSelect.addEventListener('change', () => {
+            if (globalRawCsvData) {
+                statusBar.textContent = "Recalculating with new evaluation interval...";
+                processMetrics(globalRawCsvData);
+            }
+        });
+    }
+
+    // ENGINE PEMBUAT GAMBAR TABEL (Iframe Terisolasi)
     downloadBtn.addEventListener('click', () => {
         statusBar.textContent = "Generating high-fidelity spreadsheet image...";
 
-        // 1. Buat Iframe terisolasi agar html2canvas tidak terpengaruh CSS global Tailwind (oklch)
         const iframe = document.createElement('iframe');
         iframe.style.position = 'absolute';
         iframe.style.left = '-9999px';
@@ -61,20 +73,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const iframeDoc = iframe.contentWindow.document;
 
-        // 2. Judul Laporan di atas Spreadsheet
         const dailyTargetFormatted = (globalBaseDailyIncrement / 1000000).toLocaleString('en-US', { 
             maximumFractionDigits: 2 
         });
-
+        calculated_per = `<p style="margin: 4px 0 0 0; font-size: 12px; color: #6b7280; font-family: monospace;">Calculated per ${evalIntervalSelect.value} day(s)</p>`
+        if (evalIntervalSelect.value == 1) {
+            calculated_per = `<p style="margin: 4px 0 0 0; font-size: 12px; color: #6b7280; font-family: monospace;">Calculated per day</p>`
+        }
         let tableHeaderHTML = `
             <div style="margin-bottom: 20px; font-family: Arial, sans-serif;">
                 <h2 style="margin: 0; font-size: 20px; color: #1f2937; font-weight: bold;">Eclairs Origin Warn List</h2>
                 <p style="margin: 4px 0 0 0; font-size: 12px; color: #6b7280; font-family: monospace;">Exported on: ${new Date().toLocaleString()}</p>
                 <p style="margin: 4px 0 0 0; font-size: 12px; color: #6b7280; font-family: monospace;">Daily Fans: ${dailyTargetFormatted}M/day</p>
+                ${calculated_per}
             </div>
         `;
 
-        // 3. Gabungkan seluruh data menjadi satu daftar baris urut
         const spreadsheetRows = [];
         
         globalWarningList.forEach(user => {
@@ -96,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 4. Bangun struktur tabel Google Sheets
         let spreadsheetTableHTML = `
             <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; table-layout: fixed; font-size: 13px; color: #374151; font-family: Arial, sans-serif;">
                 <thead>
@@ -168,25 +181,17 @@ document.addEventListener('DOMContentLoaded', () => {
             </table>
         `;
 
-        // Tulis struktur bersih ke dokumen Iframe
         iframeDoc.open();
         iframeDoc.write(`
             <!DOCTYPE html>
             <html>
             <head>
                 <style>
-                    * {
-                        box-sizing: border-box;
-                    }
-                    body { 
-                        margin: 0; 
-                        padding: 0; 
-                        background-color: #ffffff; 
-                    }
+                    * { box-sizing: border-box; }
+                    body { margin: 0; padding: 0; background-color: #ffffff; }
                 </style>
             </head>
             <body>
-                <!-- Padding ditambahkan langsung di sini agar ikut ter-capture oleh html2canvas -->
                 <div id="render-target" style="padding: 32px; background-color: #ffffff; width: 1050px;">
                     ${tableHeaderHTML}
                     ${spreadsheetTableHTML}
@@ -196,7 +201,6 @@ document.addEventListener('DOMContentLoaded', () => {
         `);
         iframeDoc.close();
 
-        // 5. Render html2canvas dari dalam konteks Iframe yang bersih
         setTimeout(() => {
             const renderTarget = iframeDoc.getElementById('render-target');
             
@@ -235,11 +239,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return; 
         }
 
+        const EVAL_INTERVAL = evalIntervalSelect ? parseInt(evalIntervalSelect.value, 10) : 2;
+
         globalBaseDailyIncrement = BASE_DAILY_INCREMENT;
         const headers = data[0].map(h => h.trim());
         const rows = data.slice(1);
 
-        // Reset variabel global
         globalWarningList = [];
         globalGrayList = [];
         globalUserGrayCounts = {};
@@ -253,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const trainerName = row[1]?.trim();
             if (!trainerId || !trainerName) return;
             
-            // --- A. TOP 5 CALCULATIONS ---
+            // --- A. TOP & LEAST CALCULATIONS ---
             let lastValue = null;
             let lastDay = null;
             let maxDailyGain = -Infinity;
@@ -266,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (rawValStr === '' || rawValStr === undefined) continue;
 
                 const score = parseInt(rawValStr, 10);
-                if (isNaN(score)) continue;
+                if (isNaN(score) || (lastValue === null && score === 0)) continue;
 
                 const dayNum = parseInt(headers[idx].replace(/\D/g, ''), 10);
 
@@ -313,8 +318,11 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let idx = 2; idx < row.length; idx++) {
                 const rawValStr = row[idx]?.trim();
                 if (rawValStr !== undefined && rawValStr !== '') {
-                    entryDayNum = parseInt(headers[idx].replace(/\D/g, ''), 10);
-                    break;
+                    const val = parseInt(rawValStr, 10);
+                    if (!isNaN(val) && val > 0) {
+                        entryDayNum = parseInt(headers[idx].replace(/\D/g, ''), 10);
+                        break;
+                    }
                 }
             }
 
@@ -326,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let idx = 2; idx < headers.length; idx++) {
                 const dayNum = parseInt(headers[idx].replace(/\D/g, ''), 10);
                 
-                if (dayNum % 2 !== 0) continue;
+                if (dayNum % EVAL_INTERVAL !== 0) continue;
                 if (idx >= row.length) break;
 
                 const rawValStr = row[idx]?.trim();
@@ -335,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (rawValStr === '') continue;
 
                 const score = parseInt(rawValStr, 10);
-                if (isNaN(score)) continue;
+                if (isNaN(score) || (score === 0 && dayNum <= entryDayNum)) continue;
 
                 const personalElapsedDays = (dayNum - entryDayNum) + 1;
                 let targetThreshold = personalElapsedDays * BASE_DAILY_INCREMENT;
@@ -357,7 +365,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             globalUserGrayCounts[trainerId] = graysForUser.length;
 
-            // --- HITUNG WEIGHT SCORE DI SINI ---
             const warnCount = warningsForUser.length;
             const grayCount = graysForUser.length;
             const calculatedWeight = ((warnCount * 3) * 1.1) + (grayCount * 1);
@@ -391,10 +398,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Sort Data
         globalWarningList.sort((a, b) => b.weightScore - a.weightScore);
         globalGrayList.sort((a, b) => b.weightScore - a.weightScore);
 
+        // Sorting Most Gain (Descending)
         userTotals.sort((a, b) => b.totalGain - a.totalGain);
         const top5Totals = userTotals.slice(0, 5);
 
@@ -406,19 +413,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const top5Dailies = userBestDailies.slice(0, 5);
 
-        renderDashboard(globalWarningList, globalGrayList, globalUserGrayCounts, top5Totals, top5Dailies);
+        // Sorting Least Gain (Ascending)
+        const leastTotals = [...userTotals].sort((a, b) => a.totalGain - b.totalGain).slice(0, 3);
+        const leastDailies = [...userBestDailies].sort((a, b) => a.maxGain - b.maxGain).slice(0, 3);
+
+        renderDashboard(globalWarningList, globalGrayList, globalUserGrayCounts, top5Totals, top5Dailies, leastTotals, leastDailies);
     }
 
-    function renderDashboard(warnings, grays, userGrayCounts, topTotals, topDailies) {
+    function renderDashboard(warnings, grays, userGrayCounts, topTotals, topDailies, leastTotals, leastDailies) {
         warningContainer.innerHTML = '';
         grayContainer.innerHTML = '';
         topTotalContainer.innerHTML = '';
         topDailyContainer.innerHTML = '';
+        if (leastTotalContainer) leastTotalContainer.innerHTML = '';
+        if (leastDailyContainer) leastDailyContainer.innerHTML = '';
 
         warningBadge.textContent = `${warnings.length} Users`;
         grayBadge.textContent = `${grays.length} Users`;
 
-        // Warn List UI
         if (warnings.length === 0) {
             warningContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">Belum ada Daftar Warn.</p>`;
         } else {
@@ -428,7 +440,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Gray List UI
         if (grays.length === 0) {
             grayContainer.innerHTML = `<p class="text-sm text-slate-400 p-4 text-center">Belum Ada Daftar Gray.</p>`;
         } else {
@@ -437,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Top 5 Total Gain UI
+        // Top 5 Total Gain
         if (topTotals.length === 0) {
             topTotalContainer.innerHTML = '<p class="text-sm text-slate-400 py-4 text-center">Tidak ada data</p>';
         } else {
@@ -463,7 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // Top 5 Daily Gain UI
+        // Top 5 Daily Gain
         if (topDailies.length === 0) {
             topDailyContainer.innerHTML = '<p class="text-sm text-slate-400 py-4 text-center">Tidak ada data</p>';
         } else {
@@ -489,12 +500,67 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        // Top 3 Least Total Gain
+        if (leastTotalContainer) {
+            if (leastTotals.length === 0) {
+                leastTotalContainer.innerHTML = '<p class="text-sm text-slate-400 py-4 text-center">Tidak ada data</p>';
+            } else {
+                leastTotals.forEach((item, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'py-3 flex items-center justify-between text-sm';
+                    el.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <span class="w-6 h-6 rounded-full bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center">
+                                ${index + 1}
+                            </span>
+                            <div>
+                                <p class="font-bold text-slate-800">${escapeHtml(item.name)}</p>
+                                <p class="text-xs text-slate-400">ID: ${escapeHtml(item.id)}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-extrabold text-rose-600">${item.totalGain.toLocaleString('id-ID')}</p>
+                            <p class="text-[10px] text-slate-400">Latest: Day ${item.latestDay}</p>
+                        </div>
+                    `;
+                    leastTotalContainer.appendChild(el);
+                });
+            }
+        }
+
+        // Top 3 Least Daily Gain
+        if (leastDailyContainer) {
+            if (leastDailies.length === 0) {
+                leastDailyContainer.innerHTML = '<p class="text-sm text-slate-400 py-4 text-center">Tidak ada data</p>';
+            } else {
+                leastDailies.forEach((item, index) => {
+                    const el = document.createElement('div');
+                    el.className = 'py-3 flex items-center justify-between text-sm';
+                    el.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <span class="w-6 h-6 rounded-full bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center">
+                                ${index + 1}
+                            </span>
+                            <div>
+                                <p class="font-bold text-slate-800">${escapeHtml(item.name)}</p>
+                                <p class="text-xs text-slate-400">ID: ${escapeHtml(item.id)}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-extrabold text-rose-600">+${item.maxGain.toLocaleString('id-ID')}</p>
+                            <p class="text-[10px] text-slate-400 font-medium">Recorded: Day ${item.dayNum}</p>
+                        </div>
+                    `;
+                    leastDailyContainer.appendChild(el);
+                });
+            }
+        }
+
         statusBar.textContent = "Data processing complete.";
         dashboardLists.classList.remove('hidden');
         downloadBtn.classList.remove('hidden');
     }
 
-    // Tampilan Interaktif di Monitor/HP (Menggunakan Tailwind agar responsive & fluid saat dibaca langsung)
     function createRowElement(user, color, grayCount) {
         const div = document.createElement('div');
         div.className = 'py-3.5 px-2 flex items-center justify-between gap-2 border-b border-slate-100 last:border-0';
