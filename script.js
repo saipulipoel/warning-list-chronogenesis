@@ -493,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="text-right">
                         <p class="font-extrabold text-amber-600">+${item.maxGain.toLocaleString('id-ID')}</p>
-                        <p class="text-[10px] text-slate-400 font-medium">Triggered: Day ${item.dayNum}</p>
+                        <p class="text-[10px] text-slate-400 font-medium">Recorded: Day ${item.dayNum}</p>
                     </div>
                 `;
                 topDailyContainer.appendChild(el);
