@@ -251,18 +251,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let userTotals = [];
         let userBestDailies = [];
+        let userLeastDailies = [];
+
+        // Find the overall maximum column index that actually has data across ANY user
+        let maxGlobalHeaderIdx = -1;
+        rows.forEach(r => {
+            for (let idx = headers.length - 1; idx >= 2; idx--) {
+                if (r[idx]?.trim() !== undefined && r[idx]?.trim() !== '') {
+                    if (idx > maxGlobalHeaderIdx) maxGlobalHeaderIdx = idx;
+                    break;
+                }
+            }
+        });
 
         rows.forEach(row => {
             if (row.length < 2) return;
             const trainerId = row[0]?.trim();
             const trainerName = row[1]?.trim();
             if (!trainerId || !trainerName) return;
-            
+
+            // Determine if trainer quit before the latest day recorded in CSV headers
+            let lastRecordedHeaderIdx = -1;
+            for (let idx = headers.length - 1; idx >= 2; idx--) {
+                const rawVal = row[idx]?.trim();
+                if (rawVal !== undefined && rawVal !== '') {
+                    lastRecordedHeaderIdx = idx;
+                    break;
+                }
+            }
+            const hasQuit = lastRecordedHeaderIdx < maxGlobalHeaderIdx;
+
             // --- A. TOP & LEAST CALCULATIONS ---
             let lastValue = null;
             let lastDay = null;
+            
             let maxDailyGain = -Infinity;
             let maxDailyDay = null;
+
+            let minDailyGain = Infinity;
+            let minDailyDay = null;
 
             for (let idx = 2; idx < headers.length; idx++) {
                 if (idx >= row.length) break;
@@ -282,12 +309,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     dailyGain = score - lastValue;
                 }
 
+                // 1. Max Daily Gain tracking
                 if (dailyGain > maxDailyGain) {
                     maxDailyGain = dailyGain;
                     maxDailyDay = dayNum;
                 } else if (dailyGain === maxDailyGain && maxDailyDay !== null) {
-                    if (dayNum < maxDailyDay) {
-                        maxDailyDay = dayNum;
+                    if (dayNum < maxDailyDay) maxDailyDay = dayNum;
+                }
+
+                // 2. Min Daily Gain tracking (Excluding 0 and negative gains)
+                if (dailyGain > 0) {
+                    if (dailyGain < minDailyGain) {
+                        minDailyGain = dailyGain;
+                        minDailyDay = dayNum;
+                    } else if (dailyGain === minDailyGain && minDailyDay !== null) {
+                        if (dayNum < minDailyDay) minDailyDay = dayNum;
                     }
                 }
 
@@ -295,22 +331,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 lastDay = dayNum;
             }
 
-            if (lastValue !== null) {
-                userTotals.push({
-                    name: trainerName,
-                    id: trainerId,
-                    totalGain: lastValue,
-                    latestDay: lastDay
-                });
-            }
+            // Skip stats tracking if trainer has quit early
+            if (!hasQuit) {
+                if (lastValue !== null) {
+                    userTotals.push({
+                        name: trainerName,
+                        id: trainerId,
+                        totalGain: lastValue,
+                        latestDay: lastDay
+                    });
+                }
 
-            if (maxDailyGain !== -Infinity && maxDailyDay !== null) {
-                userBestDailies.push({
-                    name: trainerName,
-                    id: trainerId,
-                    maxGain: maxDailyGain,
-                    dayNum: maxDailyDay
-                });
+                if (maxDailyGain !== -Infinity && maxDailyDay !== null) {
+                    userBestDailies.push({
+                        name: trainerName,
+                        id: trainerId,
+                        maxGain: maxDailyGain,
+                        dayNum: maxDailyDay
+                    });
+                }
+
+                if (minDailyGain !== Infinity && minDailyDay !== null) {
+                    userLeastDailies.push({
+                        name: trainerName,
+                        id: trainerId,
+                        minGain: minDailyGain,
+                        dayNum: minDailyDay
+                    });
+                }
             }
 
             // --- B. WARN & GRAY CALCULATIONS ---
@@ -415,7 +463,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Sorting Least Gain (Ascending)
         const leastTotals = [...userTotals].sort((a, b) => a.totalGain - b.totalGain).slice(0, 3);
-        const leastDailies = [...userBestDailies].sort((a, b) => a.maxGain - b.maxGain).slice(0, 3);
+        const leastDailies = userLeastDailies.sort((a, b) => {
+            if (a.minGain !== b.minGain) {
+                return a.minGain - b.minGain;
+            }
+            return a.dayNum - b.dayNum;
+        }).slice(0, 3);
 
         renderDashboard(globalWarningList, globalGrayList, globalUserGrayCounts, top5Totals, top5Dailies, leastTotals, leastDailies);
     }
@@ -547,7 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         </div>
                         <div class="text-right">
-                            <p class="font-extrabold text-rose-600">+${item.maxGain.toLocaleString('id-ID')}</p>
+                            <p class="font-extrabold text-rose-600">+${item.minGain.toLocaleString('id-ID')}</p>
                             <p class="text-[10px] text-slate-400 font-medium">Recorded: Day ${item.dayNum}</p>
                         </div>
                     `;
